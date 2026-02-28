@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elite League Manager</title>
+<link href="https://cdn.jsdelivr.net/npm/chart.js" rel="stylesheet">
+<style>
+/* =======================
+   BASE STYLES
+======================= */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #1e1e1e;
+    color: #fff;
+}
+body.light {
+    background: #f5f5f5;
+    color: #222;
+}
+header {
+    padding: 10px;
+    background: #111;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+body.light header { background: #ddd; }
+header h1 { margin: 0; font-size: 1.5em; }
+button { cursor: pointer; padding: 5px 10px; margin: 3px; border: none; border-radius: 3px; background: #ffb700; color: #000; }
+button:hover { opacity: 0.8; }
+.container { display: flex; flex-wrap: wrap; padding: 10px; }
+.card { background: #2c2c2c; margin: 10px; padding: 15px; border-radius: 8px; flex: 1 1 300px; }
+body.light .card { background: #fff; color: #222; }
+input, select { padding: 5px; margin: 3px 0; width: 100%; border-radius: 3px; border: 1px solid #ccc; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { border: 1px solid #555; padding: 5px; text-align: center; }
+body.light th, body.light td { border: 1px solid #aaa; }
+.champion { background: #ffd70044 !important; }
+nav { text-align: center; margin: 10px; }
+nav button { margin: 0 5px; }
+.section { display: none; }
+.section.active { display: block; }
+img { vertical-align: middle; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Elite League Manager</h1>
+    <button onclick="toggleTheme()">🌙 / ☀️ Toggle Theme</button>
+</header>
+
+<nav>
+    <button onclick="showSection('leagueSection')">League</button>
+    <button onclick="showSection('teamSection')">Teams</button>
+    <button onclick="showSection('playerSection')">Players</button>
+    <button onclick="showSection('matchSection')">Matches</button>
+    <button onclick="showSection('fixturesSection')">Fixtures</button>
+    <button onclick="showSection('chartSection')">Dashboard</button>
+</nav>
+
+<div class="container">
+
+<!-- LEAGUE SECTION -->
+<div id="leagueSection" class="section active card">
+    <h2>Create / Switch League</h2>
+    <input type="text" id="leagueName" placeholder="League Name">
+    <button onclick="createLeague()">Create League</button>
+    <select id="leagueSelector" onchange="switchLeague()"></select>
+    <button onclick="resetLeague()">Reset League</button>
+</div>
+
+<!-- TEAM SECTION -->
+<div id="teamSection" class="section card">
+    <h2>Add Team</h2>
+    <input type="text" id="teamName" placeholder="Team Name">
+    <input type="text" id="teamLogo" placeholder="Logo URL (optional)">
+    <button onclick="addTeam()">Add Team</button>
+
+    <h3>League Table</h3>
+    <table id="leagueTable">
+        <tr>
+            <th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th>
+        </tr>
+    </table>
+</div>
+
+<!-- PLAYER SECTION -->
+<div id="playerSection" class="section card">
+    <h2>Add Player</h2>
+    <input type="text" id="playerName" placeholder="Player Name">
+    <select id="playerTeam"></select>
+    <button onclick="addPlayer()">Add Player</button>
+
+    <h3>Top Scorers</h3>
+    <table id="scorerTable">
+        <tr>
+            <th>Player</th><th>Goals</th><th>Y</th><th>R</th>
+        </tr>
+    </table>
+</div>
+
+<!-- MATCH SECTION -->
+<div id="matchSection" class="section card">
+    <h2>Record Match</h2>
+    <select id="teamA"></select> vs <select id="teamB"></select><br>
+    <input type="number" id="scoreA" placeholder="Score A">
+    <input type="number" id="scoreB" placeholder="Score B"><br>
+    <select id="goalPlayer"></select>
+    <input type="number" id="goalCount" placeholder="Goals">
+    <input type="number" id="yellowCount" placeholder="Yellow Cards">
+    <input type="number" id="redCount" placeholder="Red Cards"><br>
+    <button onclick="recordMatch()">Record Match</button>
+</div>
+
+<!-- FIXTURES SECTION -->
+<div id="fixturesSection" class="section card">
+    <h2>Fixtures</h2>
+    <button onclick="generateFixtures()">Generate Fixtures</button>
+    <div id="fixturesList"></div>
+</div>
+
+<!-- CHART SECTION -->
+<div id="chartSection" class="section card">
+    <h2>Points Dashboard</h2>
+    <canvas id="statsChart" width="400" height="200"></canvas>
+</div>
+
+</div>
+
+<!-- MASTER SCRIPT -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// ===============================
+// ELITE LEAGUE MANAGER - MASTER SCRIPT
+// ===============================
+
+// ---------- STORAGE ----------
+let leagues = JSON.parse(localStorage.getItem("leagues")) || {};
+let currentLeague = null;
+let chart = null;
+
+// ---------- SAVE ----------
+function save() { localStorage.setItem("leagues", JSON.stringify(leagues)); }
+
+// ---------- CREATE LEAGUE ----------
+function createLeague() {
+    const name = document.getElementById("leagueName").value.trim();
+    if (!name) return alert("Enter league name");
+    if (!leagues[name]) {
+        leagues[name] = { teams: [], players: {}, fixtures: [] };
+    }
+    currentLeague = name;
+    document.getElementById("leagueName").value = "";
+    updateLeagueSelector();
+    loadLeague();
+    save();
+}
+
+// ---------- SWITCH LEAGUE ----------
+function switchLeague() {
+    currentLeague = document.getElementById("leagueSelector").value;
+    loadLeague();
+}
+
+// ---------- UPDATE SELECTOR ----------
+function updateLeagueSelector() {
+    const sel = document.getElementById("leagueSelector");
+    sel.innerHTML = "";
+    Object.keys(leagues).forEach(l => { sel.innerHTML += `<option value="${l}">${l}</option>`; });
+}
+
+// ---------- LOAD LEAGUE ----------
+function loadLeague() {
+    if (!currentLeague || !leagues[currentLeague]) return;
+    updateDropdowns();
+    updateTable();
+    updateScorers();
+    updateChart();
+    displayFixtures();
+}
+
+// ---------- ADD TEAM ----------
+function addTeam() {
+    if (!currentLeague) return alert("Create or select a league first");
+    let name = document.getElementById("teamName").value.trim();
+    let logo = document.getElementById("teamLogo")?.value.trim();
+    if (!name) return alert("Enter team name");
+    leagues[currentLeague].teams.push({ name, logo: logo || "https://via.placeholder.com/25", played: 0, won:0, draw:0, lost:0, gf:0, ga:0, gd:0, points:0 });
+    document.getElementById("teamName").value = "";
+    if(document.getElementById("teamLogo")) document.getElementById("teamLogo").value = "";
+    save();
+    loadLeague();
+}
+
+// ---------- ADD PLAYER ----------
+function addPlayer() {
+    if (!currentLeague) return;
+    let team = document.getElementById("playerTeam").value;
+    let name = document.getElementById("playerName").value.trim();
+    if (!name) return;
+    leagues[currentLeague].players[name] = { team, goals:0, y:0, r:0 };
+    document.getElementById("playerName").value = "";
+    save();
+    updatePlayerDropdown();
+}
+
+// ---------- UPDATE DROPDOWNS ----------
+function updateDropdowns() {
+    if (!currentLeague) return;
+    let teams = leagues[currentLeague].teams;
+    let A = document.getElementById("teamA");
+    let B = document.getElementById("teamB");
+    let P = document.getElementById("playerTeam");
+    if (!A) return;
+    A.innerHTML = B.innerHTML = P.innerHTML = "";
+    teams.forEach((t,i) => {
+        A.innerHTML += `<option value="${i}">${t.name}</option>`;
+        B.innerHTML += `<option value="${i}">${t.name}</option>`;
+        P.innerHTML += `<option value="${t.name}">${t.name}</option>`;
+    });
+    updatePlayerDropdown();
+}
+
+// ---------- UPDATE PLAYER DROPDOWN ----------
+function updatePlayerDropdown() {
+    if (!currentLeague) return;
+    let players = leagues[currentLeague].players;
+    let sel = document.getElementById("goalPlayer");
+    if (!sel) return;
+    sel.innerHTML = "";
+    Object.keys(players).forEach(p => { sel.innerHTML += `<option value="${p}">${p}</option>`; });
+}
+
+// ---------- RECORD MATCH ----------
+function recordMatch() {
+    if (!currentLeague) return;
+    let L = leagues[currentLeague];
+    let a = document.getElementById("teamA").value;
+    let b = document.getElementById("teamB").value;
+    let sA = parseInt(document.getElementById("scoreA").value);
+    let sB = parseInt(document.getElementById("scoreB").value);
+    if (a===b || isNaN(sA)||isNaN(sB)) return alert("Invalid match");
+    let A = L.teams[a], B = L.teams[b];
+    A.played++; B.played++;
+    A.gf += sA; A.ga += sB;
+    B.gf += sB; B.ga += sA;
+    if(sA>sB){ A.won++; B.lost++; A.points+=3;}
+    else if(sA<sB){ B.won++; A.lost++; B.points+=3;}
+    else{ A.draw++; B.draw++; A.points++; B.points++; }
+    A.gd = A.gf - A.ga; B.gd = B.gf - B.ga;
+    let player = document.getElementById("goalPlayer")?.value;
+    let g = parseInt(document.getElementById("goalCount")?.value)||0;
+    let y = parseInt(document.getElementById("yellowCount")?.value)||0;
+    let r = parseInt(document.getElementById("redCount")?.value)||0;
+    if(player && L.players[player]){ L.players[player].goals+=g; L.players[player].y+=y; L.players[player].r+=r; }
+    save(); loadLeague();
+}
+
+// ---------- UPDATE TABLE ----------
+function updateTable() {
+    if (!currentLeague) return;
+    let L = leagues[currentLeague];
+    let table = document.getElementById("leagueTable");
+    if (!table) return;
+    table.innerHTML = `<tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>`;
+    L.teams.sort((a,b)=>b.points-a.points || b.gd-a.gd || b.gf-a.gf);
+    L.teams.forEach((t,i)=>{
+        let champ = i===0?"champion":"", badge=i===0?"🏆":"";
+        table.innerHTML += `<tr class="${champ}"><td><img src="${t.logo}" width="25"> ${t.name} ${badge}</td><td>${t.played}</td><td>${t.won}</td><td>${t.draw}</td><td>${t.lost}</td><td>${t.gf}</td><td>${t.ga}</td><td>${t.gd}</td><td>${t.points}</td></tr>`;
+    });
+}
+
+// ---------- FIXTURES ----------
+function generateFixtures() {
+    if (!currentLeague) return;
+    let L = leagues[currentLeague];
+    L.fixtures=[];
+    let round=1;
+    for(let i=0;i<L.teams.length;i++){
+        for(let j=i+1;j<L.teams.length;j++){
+            L.fixtures.push(`Matchday ${round++}: ${L.teams[i].name} vs ${L.teams[j].name}`);
+            L.fixtures.push(`Matchday ${round++}: ${L.teams[j].name} vs ${L.teams[i].name}`);
+        }
+    }
+    save();
+    displayFixtures();
+}
+
+function displayFixtures() {
+    if (!currentLeague) return;
+    let div=document.getElementById("fixturesList");
+    if(!div) return;
+    div.innerHTML="";
+    leagues[currentLeague].fixtures.forEach(f=>{ div.innerHTML+=`<p>${f}</p>`; });
+}
+
+// ---------- SCORERS ----------
+function updateScorers() {
+    if(!currentLeague) return;
+    let table=document.getElementById("scorerTable");
+    if(!table) return;
+    table.innerHTML=`<tr><th>Player</th><th>Goals</th><th>Y</th><th>R</th></tr>`;
+    Object.entries(leagues[currentLeague].players)
+        .sort((a,b)=>b[1].goals-a[1].goals)
+        .forEach(([name,data])=>{
+            table.innerHTML+=`<tr><td>${name}</td><td>${data.goals}</td><td>${data.y}</td><td>${data.r}</td></tr>`;
+        });
+}
+
+// ---------- CHART ----------
+function updateChart() {
+    if(!currentLeague) return;
+    let ctx=document.getElementById("statsChart");
+    if(!ctx) return;
+    if(chart) chart.destroy();
+    chart=new Chart(ctx,{
+        type:'bar',
+        data:{labels:leagues[currentLeague].teams.map(t=>t.name),datasets:[{label:'Points',data:leagues[currentLeague].teams.map(t=>t.points),backgroundColor:'rgba(255,215,0,0.7)'}]}
+    });
+}
+
+// ---------- UI HELPERS ----------
+function showSection(id){
+    document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+    document.getElementById(id).classList.add("active");
+}
+function toggleTheme(){ document.body.classList.toggle("light"); }
+function resetLeague(){
+    if(!currentLeague) return;
+    if(confirm("Reset this league?")){
+        leagues[currentLeague]={teams:[],players:{},fixtures:[]};
+        save(); loadLeague();
+    }
+}
+
+// ---------- AUTO LOAD ----------
+updateLeagueSelector();
+if(Object.keys(leagues).length>0){
+    currentLeague=Object.keys(leagues)[0];
+    document.getElementById("leagueSelector").value=currentLeague;
+    loadLeague();
+}
+</script>
+
+</body>
+</html>
